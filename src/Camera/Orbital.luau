@@ -8,8 +8,7 @@ const Camera = workspace.CurrentCamera :: Camera
 
 const InputContexts = game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
-const Rotate: InputAction, Zoom: InputAction, Pan: InputAction =
-	CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan
+const Rotate, Zoom, Pan = CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan
 const MouseDelta, TouchDelta, Thumbstick1 = Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick1
 const SendLookVector: InputBinding, SendFirstPerson: InputBinding =
 	CameraContext.LookVector.controller, CameraContext.FirstPerson.controller
