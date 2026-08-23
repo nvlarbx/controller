@@ -60,6 +60,26 @@ const function TrySendFirstPerson(Value: boolean): ()
 	end
 end
 
+const function UpdateSubjectVisibility(): ()
+	const Current = Subject
+	if Current == nil then
+		return
+	end
+
+	const Transparency = if IsFirstPerson then 1 else 0
+
+	if Current:IsA("BasePart") then
+		Current.LocalTransparencyModifier = Transparency
+		return
+	end
+
+	for _, Descendant in Current:GetDescendants() do
+		if Descendant:IsA("BasePart") or Descendant:IsA("Decal") then
+			Descendant.LocalTransparencyModifier = Transparency
+		end
+	end
+end
+
 const function UpdateMouseModifier(): ()
 	MouseDelta.PrimaryModifier = if IsFirstPerson then Enum.KeyCode.None else Enum.KeyCode.MouseRightButton
 end
@@ -76,6 +96,7 @@ const function UpdateRadius(NewRadius: number): ()
 	Radius = clamp(NewRadius, MinRadius, MaxRadius)
 	IsFirstPerson = Radius <= 0.5
 	TrySendFirstPerson(IsFirstPerson)
+	UpdateSubjectVisibility()
 	UpdateMouseModifier()
 	UpdateMouseBehavior()
 	Parent:SetAttribute("Radius", Radius)
@@ -107,6 +128,7 @@ const function UpdateSubject(): ()
 	if TempSubject then
 		if TempSubject:IsA("BasePart") or TempSubject:IsA("Model") then
 			Subject, WarnedSubject = TempSubject, false
+			UpdateSubjectVisibility()
 			return
 		elseif WarnedSubject == false then
 			WarnedSubject = true
@@ -189,9 +211,7 @@ const function Update(dt: number): ()
 	end
 
 	const Current = Subject :: BasePart | Model
-	const SubjectPosition: Vector3 = if Current:IsA("BasePart")
-		then Current.Position
-		else Current:GetBoundingBox().Position
+	const SubjectPosition: Vector3 = if Current:IsA("BasePart") then Current.Position else Current:GetPivot().Position
 
 	local Focus = lookAlong(SubjectPosition, LookVector)
 	if Offset ~= ZERO then
