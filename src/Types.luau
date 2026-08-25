@@ -27,6 +27,7 @@ export type InputContexts = Folder & {
 			Thumbstick1: InputBinding,
 		},
 		Zoom: InputAction,
+		ZoomRate: InputAction,
 		Pan: InputAction,
 		LookVector: Scriptable,
 		FirstPerson: Scriptable,

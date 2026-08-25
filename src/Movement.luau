@@ -4,9 +4,19 @@ return function(Server: boolean): boolean | (Player) -> ()
 	const RunService = game:GetService("RunService") :: RunService
 
 	if Server then
-		const create, create2, magnitude, normalize, cross =
-			vector.create, Vector2.new, vector.magnitude, vector.normalize, vector.cross
+		const create, create2, magnitude, normalize, cross, dot =
+			vector.create, Vector2.new, vector.magnitude, vector.normalize, vector.cross, vector.dot
 		const ZERO, YAXIS = vector.zero :: vector, create(0, 1, 0) :: vector
+		const MOVEMENT_THRESHOLD = 0.1
+
+		@native
+		const function AlignToPlane(ToAlign: vector, PlaneNormal: vector): vector
+			const Length = magnitude(ToAlign)
+			if Length == 0 then
+				return ToAlign
+			end
+			return normalize(ToAlign - PlaneNormal * dot(ToAlign, PlaneNormal)) * Length
+		end
 
 		return function(Player: Player): ()
 			const InputContexts = Player:FindFirstChild("InputContexts") :: Types.InputContexts
@@ -18,13 +28,18 @@ return function(Server: boolean): boolean | (Player) -> ()
 			local GroundSensor: ControllerPartSensor, ClimbSensor: ControllerPartSensor
 			local SimulationStep: RBXScriptConnection?
 
+			local IsFirstPerson = FirstPersonAction:GetState() :: boolean
+			FirstPersonAction.StateChanged:Connect(function(InputState: boolean): ()
+				IsFirstPerson = InputState
+			end)
+
 			@native
 			const function OnSimulationStep(): ()
 				local LookVector = LookVectorAction:GetState() :: Vector3
 				const MoveVector = WalkAction:GetState() :: Vector2
 
 				if ActiveController ~= SwimController then
-					LookVector = create(LookVector.X, 0, LookVector.Z)
+					LookVector = AlignToPlane(LookVector, ControllerManager.UpDirection :: any)
 				end
 
 				const HasLookDirection = magnitude(LookVector) > 0.001
@@ -45,10 +60,15 @@ return function(Server: boolean): boolean | (Player) -> ()
 				end
 
 				ControllerManager.MovingDirection = WorldMoveDirection
-				if (FirstPersonAction:GetState() :: boolean) and HasLookDirection then
+				if IsFirstPerson and HasLookDirection then
 					ControllerManager.FacingDirection = LookVector
-				elseif magnitude(WorldMoveDirection) > 0.001 then
-					ControllerManager.FacingDirection = WorldMoveDirection
+				elseif magnitude(WorldMoveDirection) >= MOVEMENT_THRESHOLD then
+					const FlatDirection = AlignToPlane(WorldMoveDirection, ControllerManager.UpDirection :: any)
+					if magnitude(FlatDirection) > 0 then
+						ControllerManager.FacingDirection = FlatDirection
+					end
+				else
+					ControllerManager.FacingDirection = RootPart.CFrame.LookVector
 				end
 
 				const LocalMoveDirection = RootPart.CFrame:VectorToObjectSpace(WorldMoveDirection) :: Vector3

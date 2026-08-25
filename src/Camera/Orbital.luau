@@ -8,7 +8,7 @@ const Camera = workspace.CurrentCamera :: Camera
 
 const InputContexts = game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
-const Rotate, Zoom, Pan = CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan
+const Rotate, Zoom, ZoomRate, Pan = CameraContext.Rotate, CameraContext.Zoom, CameraContext.ZoomRate, CameraContext.Pan
 const MouseDelta, TouchDelta, Thumbstick1 = Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick1
 const SendLookVector: InputBinding, SendFirstPerson: InputBinding =
 	CameraContext.LookVector.controller, CameraContext.FirstPerson.controller
@@ -19,7 +19,8 @@ const lookAlong, fromEulerAnglesYXZ = CFrame.lookAlong, CFrame.fromEulerAnglesYX
 const insert = table.insert
 
 const RENDER_STEP_NAME = "OrbitalCamera"
-const ZOOM_RATE = 4
+const ZOOM_STEP = 0.2
+const ZOOM_RATE = 1 / 3
 const TAU, PITCH_LIMIT = (math.pi * 2) :: number, rad(80) :: number
 const MOUSE_SCALE, GAMEPAD_SCALE, TOUCH_SCALE =
 	create2(0.0025, 0.0025 * 0.77, 0) :: Vector2,
@@ -41,7 +42,7 @@ local LastSentFirstPerson = false
 local IsGamepad = false
 
 local State = ZERO :: Vector3
-local ZoomState = 0
+local ZoomRateState = 0
 
 const Connections = table.create(8) :: { RBXScriptConnection }
 
@@ -67,13 +68,19 @@ const function UpdateSubjectVisibility(): ()
 	end
 
 	const Transparency = if IsFirstPerson then 1 else 0
+	local Root: Instance = Current
 
 	if Current:IsA("BasePart") then
-		Current.LocalTransparencyModifier = Transparency
-		return
+		const Owner = Current.Parent
+		if Owner and Owner:IsA("Model") then
+			Root = Owner
+		else
+			Current.LocalTransparencyModifier = Transparency
+			return
+		end
 	end
 
-	for _, Descendant in Current:GetDescendants() do
+	for _, Descendant in Root:GetDescendants() do
 		if Descendant:IsA("BasePart") or Descendant:IsA("Decal") then
 			Descendant.LocalTransparencyModifier = Transparency
 		end
@@ -113,6 +120,7 @@ end
 const function Teardown(): ()
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	RunService:UnbindFromRenderStep(RENDER_STEP_NAME)
+	ZoomRateState = 0
 
 	for _, Connection in Connections do
 		Connection:Disconnect()
@@ -171,7 +179,13 @@ const function OnRotateStateChanged(InputState: Vector2): ()
 end
 
 const function OnZoomStateChanged(InputState: number): ()
-	ZoomState = InputState
+	if InputState ~= 0 then
+		UpdateRadius(Radius * exp(InputState * ZOOM_STEP))
+	end
+end
+
+const function OnZoomRateStateChanged(InputState: number): ()
+	ZoomRateState = InputState
 end
 
 const function OnAttributeChanged(Attr: string): ()
@@ -199,8 +213,8 @@ const function Update(dt: number): ()
 		RotateCamera(State, dt)
 	end
 
-	if ZoomState ~= 0 then
-		UpdateRadius(Radius * exp(-ZoomState * ZOOM_RATE * dt))
+	if ZoomRateState ~= 0 then
+		UpdateRadius(Radius * exp(ZoomRateState * ZOOM_RATE * dt))
 	end
 
 	if Subject == nil or Subject.Parent == nil then
@@ -227,10 +241,11 @@ const Orbital = {} :: Types.Addon
 function Orbital.Setup(): ()
 	Camera.CameraType = Enum.CameraType.Scriptable
 
-	Rotate.Enabled, Zoom.Enabled, Pan.Enabled = true, true, true
+	Rotate.Enabled, Zoom.Enabled, ZoomRate.Enabled, Pan.Enabled = true, true, true, true
 
 	insert(Connections, Rotate.StateChanged:Connect(OnRotateStateChanged))
 	insert(Connections, Zoom.StateChanged:Connect(OnZoomStateChanged))
+	insert(Connections, ZoomRate.StateChanged:Connect(OnZoomRateStateChanged))
 	insert(Connections, Parent.AttributeChanged:Connect(OnAttributeChanged))
 	insert(Connections, UserInputService:GetPropertyChangedSignal("PreferredInput"):ConnectParallel(UpdateInputType))
 	insert(Connections, UserGameSettings.Changed:Connect(UpdateSensitivities))
