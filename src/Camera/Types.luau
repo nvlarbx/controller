@@ -1,3 +1,5 @@
+--!native
+
 const Root = require(script.Parent.Parent.Types)
 
 export type Addon = {

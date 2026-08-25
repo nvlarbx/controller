@@ -1,3 +1,5 @@
+--!native
+
 const Parent = script.Parent
 const Types = require(Parent.Types)
 
@@ -14,7 +16,7 @@ const SendLookVector: InputBinding, SendFirstPerson: InputBinding =
 	CameraContext.LookVector.controller, CameraContext.FirstPerson.controller
 
 const clamp, rad, exp = math.clamp, math.rad, math.exp
-const create, create2, magnitude, ZERO = vector.create, Vector2.new, vector.magnitude, vector.zero :: any
+const create, create2, magnitude, ZERO = vector.create, Vector2.new, vector.magnitude, vector.zero :: vector
 const lookAlong, fromEulerAnglesYXZ = CFrame.lookAlong, CFrame.fromEulerAnglesYXZ
 const insert = table.insert
 
@@ -172,7 +174,7 @@ const function UpdateInputType(): ()
 end
 
 const function OnRotateStateChanged(InputState: Vector2): ()
-	State = create(InputState.X, InputState.Y, 0) :: any
+	State = create(InputState.X, InputState.Y, 0) :: vector
 	if IsGamepad == false and magnitude(State) > 0 then
 		RotateCamera(State, 1)
 	end

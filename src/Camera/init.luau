@@ -1,3 +1,5 @@
+--!native
+
 const Types = require(script.Types)
 
 const Registry = {} :: { [number]: Types.Addon }

@@ -1,3 +1,5 @@
+--!native
+
 const Types = require(script.Parent.Types)
 
 const Player = game:GetService("Players").LocalPlayer :: Player

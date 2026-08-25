@@ -1,3 +1,5 @@
+--!native
+
 export type Character = Model & {
 	HumanoidRootPart: BasePart & {
 		GroundSensor: ControllerPartSensor,
@@ -12,6 +14,7 @@ export type Character = Model & {
 	AnimationController: AnimationController & {
 		Animator: Animator,
 	},
+	Humanoid: Humanoid,
 	Limbs: Model,
 }
 
@@ -37,4 +40,4 @@ export type InputContexts = Folder & {
 	},
 }
 
-return true
+return nil
