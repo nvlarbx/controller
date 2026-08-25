@@ -1,7 +1,7 @@
 To implement, all you ***really*** need is:
 - [Server Authority](https://tenebrisnoctua.github.io/ServerAuthority/)
 - [InputContexts](src/InputContexts.rbxm) under Player;
-- A fully wired ControllerManager under Player.Character;
+- A fully wired ControllerManager and Humanoid under Player.Character;
 - the following on *both* RunContexts:
 ```luau
 const controller = game:GetService("ReplicatedFirst").controller
