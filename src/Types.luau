@@ -11,11 +11,24 @@ export type Character = Model & {
 		SwimController: SwimController,
 		ClimbController: ClimbController,
 	},
-	AnimationController: AnimationController & {
+	Humanoid: Humanoid & {
 		Animator: Animator,
 	},
-	Humanoid: Humanoid,
 	Limbs: Model,
+}
+
+export type CharacterHandle = {
+	Character: Model,
+	RootPart: BasePart,
+	Humanoid: Humanoid,
+	ControllerManager: ControllerManager,
+	GroundController: GroundController,
+	AirController: AirController,
+	SwimController: SwimController,
+	ClimbController: ClimbController,
+	GroundSensor: ControllerPartSensor,
+	ClimbSensor: ControllerPartSensor,
+	Animator: Animator,
 }
 
 type Scriptable = InputAction & {

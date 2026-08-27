@@ -2,36 +2,40 @@
 
 const Types = require(script.Types)
 
-const Registry = {} :: { [number]: Types.Addon }
-local CurrentAddonIndex: number? = nil
+const Registry = {} :: { [any]: Types.Addon }
+
+const Camera = {} :: Types.Registry
+
 local CurrentAddon: Types.Addon? = nil
 
-const function Change(): ()
-	const AddonIndex = script:GetAttribute("Addon") :: number?
-
-	if AddonIndex == nil or AddonIndex == CurrentAddonIndex then
-		return
-	end
-
-	const Addon: Types.Addon? = Registry[AddonIndex]
-
-	if Addon == nil then
-		warn(`Invalid addon index {AddonIndex}`)
-		if CurrentAddonIndex then
-			script:SetAttribute("Addon", CurrentAddonIndex)
-		end
-		return
-	end
-
+function Camera.Teardown(): ()
 	const Old = CurrentAddon
-	if Old then
-		const Teardown = Old.Teardown
-		if Teardown then
-			Teardown()
-		end
+	if Old == nil then
+		return
 	end
 
-	CurrentAddon, CurrentAddonIndex = Addon, AddonIndex
+	const Teardown = Old.Teardown
+	if Teardown then
+		Teardown()
+	end
+
+	CurrentAddon, Camera.Current = nil, nil
+end
+
+function Camera.Setup(Index: any): ()
+	if Index == Camera.Current then
+		return
+	end
+
+	const Addon = Registry[Index]
+	if Addon == nil then
+		warn(`Invalid addon index {Index}`)
+		return
+	end
+
+	Camera.Teardown()
+
+	CurrentAddon, Camera.Current = Addon, Index
 
 	const Setup = Addon.Setup
 	if Setup then
@@ -39,9 +43,8 @@ const function Change(): ()
 	end
 end
 
-script:GetAttributeChangedSignal("Addon"):Connect(Change)
-task.defer(Change)
-
-return function(Type: number, Addon: Types.Addon): ()
-	Registry[Type] = Addon
+function Camera.Register(Index: any, Addon: Types.Addon?): ()
+	Registry[Index] = Addon
 end
+
+return Camera

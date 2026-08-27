@@ -1,14 +1,14 @@
 --!native
 
-const Parent = script.Parent
-const Types = require(Parent.Types)
+const Types = require(script.Parent.Types)
 
 const RunService, UserInputService =
 	game:GetService("RunService") :: RunService, game:GetService("UserInputService") :: UserInputService
 const UserGameSettings = UserSettings():GetService("UserGameSettings") :: UserGameSettings
 const Camera = workspace.CurrentCamera :: Camera
 
-const InputContexts = game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
+const Player = game:GetService("Players").LocalPlayer :: Player
+const InputContexts = Player:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
 const Rotate, Zoom, ZoomRate, Pan = CameraContext.Rotate, CameraContext.Zoom, CameraContext.ZoomRate, CameraContext.Pan
 const MouseDelta, TouchDelta, Thumbstick1 = Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick1
@@ -29,14 +29,26 @@ const MOUSE_SCALE, GAMEPAD_SCALE, TOUCH_SCALE =
 	(create2(1, 0.77, 0) * rad(240)) :: Vector2,
 	(create2(1, 0.66, 0) * rad(1)) :: Vector2
 
-local MinRadius, MaxRadius =
-	(Parent:GetAttribute("MinRadius") or 0.5) :: number, (Parent:GetAttribute("MaxRadius") or 128) :: number
-local Radius = clamp((Parent:GetAttribute("Radius") or 12.5) :: number, MinRadius, MaxRadius) :: number
+local MinRadius, MaxRadius = Player.CameraMinZoomDistance, Player.CameraMaxZoomDistance
+local Radius = clamp(12.5, MinRadius, MaxRadius) :: number
 local IsFirstPerson = (Radius <= 0.5) :: boolean
-local Offset = (Parent:GetAttribute("Offset") or ZERO) :: Vector3
+local Offset = ZERO :: Vector3
+
+const SubjectGetters = {
+	BasePart = function(Instance: any): Vector3
+		return Instance.Position
+	end,
+	Model = function(Instance: any): Vector3
+		return Instance:GetPivot().Position
+	end,
+} :: { [string]: (any) -> Vector3 }
 
 local Subject: (BasePart | Model)? = nil
+local GetSubjectPosition: ((any) -> Vector3)? = nil
 local WarnedSubject = false
+local Humanoid: Humanoid? = nil
+local OffsetConnection: RBXScriptConnection? = nil
+local SubjectConnection: RBXScriptConnection? = nil
 local Yaw, Pitch = 0, rad(-15) :: number
 local LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector :: Vector3
 local LastSentLookVector = ZERO :: Vector3
@@ -108,7 +120,6 @@ const function UpdateRadius(NewRadius: number): ()
 	UpdateSubjectVisibility()
 	UpdateMouseModifier()
 	UpdateMouseBehavior()
-	Parent:SetAttribute("Radius", Radius)
 end
 
 @native
@@ -129,18 +140,84 @@ const function Teardown(): ()
 	end
 
 	table.clear(Connections)
+
+	const Offsets = OffsetConnection
+	if Offsets then
+		Offsets:Disconnect()
+		OffsetConnection = nil
+	end
+
+	const Subjects = SubjectConnection
+	if Subjects then
+		Subjects:Disconnect()
+		SubjectConnection = nil
+	end
+
+	Humanoid = nil
 end
 
-const function UpdateSubject(): ()
-	const Handle = Parent:GetAttribute("Subject") :: { Get: (any) -> Instance? }?
-	const TempSubject = if Handle then Handle:Get() else nil
+const function UpdateOffset(): ()
+	const Current = Humanoid
+	Offset = if Current then Current.CameraOffset else ZERO
+end
+
+const function BindOffset(): ()
+	const Existing = OffsetConnection
+	if Existing then
+		Existing:Disconnect()
+		OffsetConnection = nil
+	end
+
+	const Current = Humanoid
+	if Current then
+		OffsetConnection = Current:GetPropertyChangedSignal("CameraOffset"):Connect(UpdateOffset)
+	end
+
+	UpdateOffset()
+end
+
+local UpdateSubject: () -> ()
+
+-- Watches the resolved subject, and keeps watching it once it goes away: a
+-- streamed-out or destroyed instance is re-parented, not changed on the Camera,
+-- so this connection is the only thing that can bring it back.
+const function BindSubject(Watched: Instance?): ()
+	const Existing = SubjectConnection
+	if Existing then
+		Existing:Disconnect()
+		SubjectConnection = nil
+	end
+
+	if Watched then
+		SubjectConnection = Watched:GetPropertyChangedSignal("Parent"):Connect(UpdateSubject)
+	end
+end
+
+function UpdateSubject(): ()
+	const Resolved: Instance? = Camera.CameraSubject
+	local TempSubject: Instance? = Resolved
+
+	if Resolved and Resolved:IsA("Humanoid") then
+		Humanoid = Resolved
+		TempSubject = Resolved.Parent
+	else
+		Humanoid = nil
+	end
+
+	BindOffset()
 
 	if TempSubject then
-		if TempSubject:IsA("BasePart") or TempSubject:IsA("Model") then
-			Subject, WarnedSubject = TempSubject, false
+		const Getter = if TempSubject:IsA("BasePart")
+			then SubjectGetters.BasePart
+			elseif TempSubject:IsA("Model") then SubjectGetters.Model
+			else nil
+
+		if Getter and TempSubject.Parent then
+			Subject, GetSubjectPosition, WarnedSubject = TempSubject :: any, Getter, false
+			BindSubject(TempSubject)
 			UpdateSubjectVisibility()
 			return
-		elseif WarnedSubject == false then
+		elseif Getter == nil and WarnedSubject == false then
 			WarnedSubject = true
 			warn(`Subject {TempSubject.Name} of class {TempSubject.ClassName} is not treated`)
 		end
@@ -149,11 +226,8 @@ const function UpdateSubject(): ()
 		warn("Missing subject")
 	end
 
-	Subject = nil
-end
-
-const function UpdateOffset(): ()
-	Offset = (Parent:GetAttribute("Offset") or ZERO) :: Vector3
+	Subject, GetSubjectPosition = nil, nil
+	BindSubject(TempSubject or Resolved)
 end
 
 const function UpdateSensitivities(): ()
@@ -190,23 +264,9 @@ const function OnZoomRateStateChanged(InputState: number): ()
 	ZoomRateState = InputState
 end
 
-const function OnAttributeChanged(Attr: string): ()
-	if Attr == "Subject" then
-		UpdateSubject()
-	elseif Attr == "Radius" then
-		const R = Parent:GetAttribute("Radius") :: number?
-		if R and R ~= Radius then
-			UpdateRadius(R)
-		end
-	elseif Attr == "MinRadius" then
-		MinRadius = (Parent:GetAttribute("MinRadius") or MinRadius) :: number
-		UpdateRadius(Radius)
-	elseif Attr == "MaxRadius" then
-		MaxRadius = (Parent:GetAttribute("MaxRadius") or MaxRadius) :: number
-		UpdateRadius(Radius)
-	elseif Attr == "Offset" then
-		UpdateOffset()
-	end
+const function UpdateZoomLimits(): ()
+	MinRadius, MaxRadius = Player.CameraMinZoomDistance, Player.CameraMaxZoomDistance
+	UpdateRadius(Radius)
 end
 
 @native
@@ -219,15 +279,11 @@ const function Update(dt: number): ()
 		UpdateRadius(Radius * exp(ZoomRateState * ZOOM_RATE * dt))
 	end
 
-	if Subject == nil or Subject.Parent == nil then
-		UpdateSubject()
-		if Subject == nil then
-			return
-		end
+	if Subject == nil then
+		return
 	end
 
-	const Current = Subject :: BasePart | Model
-	const SubjectPosition: Vector3 = if Current:IsA("BasePart") then Current.Position else Current:GetPivot().Position
+	const SubjectPosition = (GetSubjectPosition :: (any) -> Vector3)(Subject)
 
 	local Focus = lookAlong(SubjectPosition, LookVector)
 	if Offset ~= ZERO then
@@ -248,16 +304,17 @@ function Orbital.Setup(): ()
 	insert(Connections, Rotate.StateChanged:Connect(OnRotateStateChanged))
 	insert(Connections, Zoom.StateChanged:Connect(OnZoomStateChanged))
 	insert(Connections, ZoomRate.StateChanged:Connect(OnZoomRateStateChanged))
-	insert(Connections, Parent.AttributeChanged:Connect(OnAttributeChanged))
 	insert(Connections, UserInputService:GetPropertyChangedSignal("PreferredInput"):ConnectParallel(UpdateInputType))
 	insert(Connections, UserGameSettings.Changed:Connect(UpdateSensitivities))
 	insert(Connections, UserGameSettings.FullscreenChanged:Connect(UpdateMouseBehavior))
 	insert(Connections, Pan.StateChanged:Connect(UpdateMouseBehavior))
+	insert(Connections, Camera:GetPropertyChangedSignal("CameraSubject"):Connect(UpdateSubject))
+	insert(Connections, Player:GetPropertyChangedSignal("CameraMinZoomDistance"):Connect(UpdateZoomLimits))
+	insert(Connections, Player:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(UpdateZoomLimits))
 	RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value, Update)
 
 	UpdateSubject()
-	UpdateOffset()
-	UpdateRadius((Parent:GetAttribute("Radius") or Radius) :: number)
+	UpdateZoomLimits()
 	UpdateInputType()
 	UpdateSensitivities()
 	UpdateMouseModifier()

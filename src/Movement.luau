@@ -1,13 +1,11 @@
 --!native
 
-return function(Server: boolean): nil | (Player) -> ()
+return function(Server: boolean): ((Player) -> ())?
 	const RunService = game:GetService("RunService") :: RunService
 
 	if Server then
-		const TemplateInputContexts = script.InputContexts
-
-		const create, create2, magnitude, normalize, cross, dot =
-			vector.create, Vector2.new, vector.magnitude, vector.normalize, vector.cross, vector.dot
+		const create, magnitude, normalize, cross, dot =
+			vector.create, vector.magnitude, vector.normalize, vector.cross, vector.dot
 		const clamp, acos, cos, sin = math.clamp, math.acos, math.cos, math.sin
 		const ZERO, YAXIS = vector.zero :: vector, create(0, 1, 0) :: vector
 		const MOVEMENT_THRESHOLD, DIRECTION_EPSILON = 0.1, 0.001
@@ -38,8 +36,8 @@ return function(Server: boolean): nil | (Player) -> ()
 		end
 
 		return function(Player: Player): ()
-			const InputContexts = TemplateInputContexts:Clone()
-			InputContexts.Parent = Player
+			const Types = require(script.Parent.Types)
+			const InputContexts = Player:WaitForChild("InputContexts") :: Types.InputContexts
 
 			const CameraContext, MovementContext = InputContexts.CameraContext, InputContexts.MovementContext
 			const LookVectorAction, FirstPersonAction, WalkAction =
@@ -111,9 +109,6 @@ return function(Server: boolean): nil | (Player) -> ()
 					ControllerManager.FacingDirection = RootPart.CFrame.LookVector
 				end
 
-				const LocalMoveDirection = RootPart.CFrame:VectorToObjectSpace(SmoothMoveDirection) :: Vector3
-				ControllerManager:SetAttribute("Move", create2(LocalMoveDirection.X, -LocalMoveDirection.Z))
-
 				const NextController: ControllerBase = if IsSwimming
 					then SwimController
 					elseif IsClimbing then ClimbController
@@ -132,7 +127,10 @@ return function(Server: boolean): nil | (Player) -> ()
 					SimulationStep = nil
 				end
 
-				const ControllerManagerInstance = Model.ControllerManager
+				const ControllerManagerInstance = Model:FindFirstChildOfClass("ControllerManager")
+				if ControllerManagerInstance == nil then
+					return
+				end
 
 				ControllerManager = ControllerManagerInstance
 				GroundSensor, ClimbSensor =
@@ -155,12 +153,6 @@ return function(Server: boolean): nil | (Player) -> ()
 			end
 		end
 	else
-		const Player = game:GetService("Players").LocalPlayer :: Player
-
-		Player.CharacterAdded:Connect(function(Model: Model): ()
-			RunService:SetPredictionMode(Model, Enum.PredictionMode.On)
-		end)
-
-		return nil
+		return
 	end
 end
