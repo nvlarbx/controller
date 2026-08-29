@@ -15,6 +15,7 @@ export type Character = Model & {
 		Animator: Animator,
 	},
 	Limbs: Model,
+	Animate: ModuleScript,
 }
 
 export type CharacterHandle = {

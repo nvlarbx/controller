@@ -2,18 +2,11 @@
 
 return function(Server: boolean): ((Player) -> ())?
 	if Server then
-		const RunService = game:GetService("RunService") :: RunService
-
-		game:GetService("Players").LocalPlayer.CharacterAdded:ConnectParallel(function(Character: Model): ()
-			RunService:SetPredictionMode(Character, Enum.PredictionMode.On)
-		end)
-
-		return
-	else
 		const Types = require(script.Parent.Types)
 		const newInstance = Instance.new
 
 		const function Augment(Character: Model): Types.CharacterHandle?
+			Character:FindFirstChild("Animate"):Destroy()
 			const RootPart = Character.PrimaryPart :: Part
 			const Humanoid = Character:FindFirstChildOfClass("Humanoid") :: Humanoid
 
@@ -62,7 +55,7 @@ return function(Server: boolean): ((Player) -> ())?
 			const ClimbController = newInstance("ClimbController")
 			ClimbController.Parent = ControllerManager
 
-			const Animator = Humanoid:WaitForChild("Animator") :: Animator
+			Humanoid.EvaluateStateMachine = false
 
 			return {
 				Character = Character,
@@ -75,7 +68,7 @@ return function(Server: boolean): ((Player) -> ())?
 				ClimbController = ClimbController,
 				GroundSensor = GroundSensor,
 				ClimbSensor = ClimbSensor,
-				Animator = Animator,
+				Animator = Humanoid:WaitForChild("Animator") :: Animator,
 			}
 		end
 
@@ -87,5 +80,13 @@ return function(Server: boolean): ((Player) -> ())?
 
 			Player.CharacterAdded:Connect(Augment)
 		end
+	else
+		const RunService = game:GetService("RunService") :: RunService
+
+		game:GetService("Players").LocalPlayer.CharacterAdded:ConnectParallel(function(Character: Model): ()
+			RunService:SetPredictionMode(Character, Enum.PredictionMode.On)
+		end)
+
+		return
 	end
 end

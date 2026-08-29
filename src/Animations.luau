@@ -1,6 +1,6 @@
 --!native
 
-export type Set = (Graph: (Animation | KeyframeSequenceProvider)?) -> ()
+export type Set = (Graph: Animation?) -> ()
 
 return function(): Set?
 	const Player = game:GetService("Players").LocalPlayer :: Player
@@ -10,7 +10,7 @@ return function(): Set?
 
 	local Animator: Animator? = nil
 	local ControllerManager: ControllerManager? = nil
-	local Source: (Animation | KeyframeSequenceProvider)? = nil
+	local Source: Animation? = nil
 	local Track: AnimationTrack? = nil
 	const Connections = table.create(2) :: { RBXScriptConnection }
 
@@ -93,7 +93,7 @@ return function(): Set?
 		task.spawn(Bind, Existing)
 	end
 
-	return function(Graph: (Animation | KeyframeSequenceProvider)?): ()
+	return function(Graph: Animation?): ()
 		Source = Graph
 		LoadTrack()
 		UpdateBlend()

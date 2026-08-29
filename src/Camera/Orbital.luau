@@ -50,17 +50,16 @@ local Humanoid: Humanoid? = nil
 local OffsetConnection: RBXScriptConnection? = nil
 local SubjectConnection: RBXScriptConnection? = nil
 local Yaw, Pitch = 0, rad(-15) :: number
-local LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector :: Vector3
-local LastSentLookVector = ZERO :: Vector3
+local LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector :: vector
+local LastSentLookVector = ZERO :: vector
 local LastSentFirstPerson = false
 local IsGamepad = false
 
-local State = ZERO :: Vector3
+local State = ZERO :: vector
 local ZoomRateState = 0
 
 const Connections = table.create(8) :: { RBXScriptConnection }
 
-@native
 const function TrySendLookVector(): ()
 	if magnitude(LookVector - LastSentLookVector) > 0.001 then
 		LastSentLookVector = LookVector
@@ -112,7 +111,6 @@ const function UpdateMouseBehavior(): ()
 		else Enum.MouseBehavior.Default
 end
 
-@native
 const function UpdateRadius(NewRadius: number): ()
 	Radius = clamp(NewRadius, MinRadius, MaxRadius)
 	IsFirstPerson = Radius <= 0.5
@@ -122,7 +120,6 @@ const function UpdateRadius(NewRadius: number): ()
 	UpdateMouseBehavior()
 end
 
-@native
 const function RotateCamera(Delta: Vector3, Scale: number): ()
 	Yaw = (Yaw - (Delta.X * Scale)) % TAU
 	Pitch = clamp(Pitch - (Delta.Y * Scale), -PITCH_LIMIT, PITCH_LIMIT)
@@ -178,9 +175,6 @@ end
 
 local UpdateSubject: () -> ()
 
--- Watches the resolved subject, and keeps watching it once it goes away: a
--- streamed-out or destroyed instance is re-parented, not changed on the Camera,
--- so this connection is the only thing that can bring it back.
 const function BindSubject(Watched: Instance?): ()
 	const Existing = SubjectConnection
 	if Existing then
@@ -269,7 +263,6 @@ const function UpdateZoomLimits(): ()
 	UpdateRadius(Radius)
 end
 
-@native
 const function Update(dt: number): ()
 	if IsGamepad and magnitude(State) > 0.001 then
 		RotateCamera(State, dt)

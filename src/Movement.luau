@@ -43,8 +43,7 @@ return function(Server: boolean): ((Player) -> ())?
 			const LookVectorAction, FirstPersonAction, WalkAction =
 				CameraContext.LookVector, CameraContext.FirstPerson, MovementContext.Walk
 
-			local ControllerManager: ControllerManager, GroundController: GroundController, AirController: AirController, SwimController: SwimController, ClimbController: ClimbController, ActiveController: ControllerBase
-			local GroundSensor: ControllerPartSensor, ClimbSensor: ControllerPartSensor
+			local ControllerManager: ControllerManager
 			local SimulationStep: RBXScriptConnection?
 			local SmoothMoveDirection = ZERO
 
@@ -53,14 +52,16 @@ return function(Server: boolean): ((Player) -> ())?
 				IsFirstPerson = InputState
 			end)
 
+			local MoveVector = WalkAction:GetState() :: Vector2
+			WalkAction.StateChanged:Connect(function(InputState: Vector2): ()
+				MoveVector = InputState
+			end)
+
 			const function OnSimulationStep(DeltaTime: number): ()
 				local LookVector = LookVectorAction:GetState() :: Vector3
-				const MoveVector = WalkAction:GetState() :: Vector2
 				const UpDirection = ControllerManager.UpDirection :: any
 
-				if ActiveController ~= SwimController then
-					LookVector = AlignToPlane(LookVector, UpDirection)
-				end
+				LookVector = AlignToPlane(LookVector, UpDirection)
 
 				const HasLookDirection = magnitude(LookVector) > DIRECTION_EPSILON
 				if HasLookDirection then
@@ -68,10 +69,6 @@ return function(Server: boolean): ((Player) -> ())?
 				end
 
 				const RootPart = ControllerManager.RootPart :: BasePart
-				const IsGrounded, IsClimbing, IsSwimming =
-					GroundSensor.SensedPart ~= nil,
-					ClimbSensor.SensedPart ~= nil,
-					RootPart.Material == Enum.Material.Water
 
 				local WorldMoveDirection = ZERO
 				const CameraRightVector = cross(LookVector, YAXIS) :: any
@@ -108,17 +105,6 @@ return function(Server: boolean): ((Player) -> ())?
 				else
 					ControllerManager.FacingDirection = RootPart.CFrame.LookVector
 				end
-
-				const NextController: ControllerBase = if IsSwimming
-					then SwimController
-					elseif IsClimbing then ClimbController
-					elseif IsGrounded then GroundController
-					else AirController
-
-				if ActiveController ~= NextController then
-					ActiveController = NextController
-					ControllerManager.ActiveController = NextController
-				end
 			end
 
 			const function CharacterAdded(Model: Model): ()
@@ -133,15 +119,6 @@ return function(Server: boolean): ((Player) -> ())?
 				end
 
 				ControllerManager = ControllerManagerInstance
-				GroundSensor, ClimbSensor =
-					ControllerManager.GroundSensor :: ControllerPartSensor,
-					ControllerManager.ClimbSensor :: ControllerPartSensor
-				GroundController, AirController, SwimController, ClimbController =
-					ControllerManagerInstance.GroundController,
-					ControllerManagerInstance.AirController,
-					ControllerManagerInstance.SwimController,
-					ControllerManagerInstance.ClimbController
-				ActiveController = ControllerManager.ActiveController :: ControllerBase
 				SmoothMoveDirection = ZERO
 
 				SimulationStep = RunService:BindToSimulation(OnSimulationStep)

@@ -1,7 +1,7 @@
 --!native
 
 const newInstance = Instance.new
-const InputActionType, KeyCode = Enum.InputActionType, Enum.KeyCode
+const InputActionType, KeyCode = Enum.InputActionType :: Enum, Enum.KeyCode :: Enum
 
 return function(Server: boolean): ((Player) -> ())?
 	if Server then
@@ -11,6 +11,7 @@ return function(Server: boolean): ((Player) -> ())?
 			newInstance("InputContext") :: InputContext, newInstance("InputContext") :: InputContext
 		MovementContext.Name, CameraContext.Name, MovementContext.Parent, CameraContext.Parent =
 			"MovementContext", "CameraContext", InputContextsTemplate, InputContextsTemplate
+
 		const Walk, LookVector, FirstPerson =
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction,
@@ -22,30 +23,29 @@ return function(Server: boolean): ((Player) -> ())?
 			MovementContext,
 			CameraContext,
 			CameraContext,
-			Enum.InputActionType.Direction2D,
-			Enum.InputActionType.Direction3D
+			InputActionType.Direction2D,
+			InputActionType.Direction3D
+
 		const Scriptable, Keybinds =
 			newInstance("InputBinding") :: InputBinding, newInstance("InputBinding") :: InputBinding
-		Scriptable.Name, Keybinds.Name, Scriptable.Parent, Keybinds.Parent, Keybinds.Up, Keybinds.Left, Keybinds.Down, Keybinds.Right =
-			"controller", "Keybinds", LookVector, Walk, Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D
+		Scriptable.Name, Scriptable.Type, Keybinds.Name, Scriptable.Parent, Keybinds.Parent, Keybinds.Up, Keybinds.Left, Keybinds.Down, Keybinds.Right =
+			"controller",
+			Enum.InputBindingType.Scriptable,
+			"Keybinds",
+			LookVector,
+			Walk,
+			KeyCode.W,
+			KeyCode.A,
+			KeyCode.S,
+			KeyCode.D
 		Scriptable:Clone().Parent = FirstPerson
-
-		return function(Player: Player): ()
-			InputContextsTemplate:Clone().Parent = Player
-		end
-	else
-		const Types = require(script.Parent.Types)
-
-		const CameraContext = (
-			game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
-		).CameraContext
 
 		const Rotate, Pan, Zoom, ZoomRate =
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction
-		Rotate.Name, Pan.Name, Zoom.Name, ZoomRate.Name, Rotate.Type, Pan.Type, Zoom.Type, ZoomRate.Type, Rotate.Enabled, Pan.Enabled, Zoom.Enabled, ZoomRate.Enabled =
+		Rotate.Name, Pan.Name, Zoom.Name, ZoomRate.Name, Rotate.Type, Pan.Type, Zoom.Type, ZoomRate.Type, Rotate.Enabled, Pan.Enabled, Zoom.Enabled, ZoomRate.Enabled, Rotate.Parent, Pan.Parent, Zoom.Parent, ZoomRate.Parent =
 			"Rotate",
 			"Pan",
 			"Zoom",
@@ -57,7 +57,11 @@ return function(Server: boolean): ((Player) -> ())?
 			false,
 			false,
 			false,
-			false
+			false,
+			CameraContext,
+			CameraContext,
+			CameraContext,
+			CameraContext
 
 		const MouseDelta, TouchDelta, Thumbstick1, RotateKeybinds =
 			newInstance("InputBinding") :: InputBinding,
@@ -117,8 +121,18 @@ return function(Server: boolean): ((Player) -> ())?
 			KeyCode.ButtonR3,
 			KeyCode.ButtonL3
 
-		Rotate.Parent, Pan.Parent, Zoom.Parent, ZoomRate.Parent =
-			CameraContext, CameraContext, CameraContext, CameraContext
+		return function(Player: Player): ()
+			InputContextsTemplate:Clone().Parent = Player
+		end
+	else
+		const Types = require(script.Parent.Types)
+
+		const CameraContext = (
+			game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
+		).CameraContext
+
+		CameraContext.Rotate.Enabled, CameraContext.Pan.Enabled, CameraContext.Zoom.Enabled, CameraContext.ZoomRate.Enabled =
+			true, true, true, true
 	end
 
 	return
