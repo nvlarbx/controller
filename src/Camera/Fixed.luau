@@ -6,11 +6,11 @@ const Player = game:GetService("Players").LocalPlayer :: Player
 const InputContexts = Player:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
 
-const Rotate: InputAction, Zoom: InputAction, Pan: InputAction =
-	CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan
+const Rotate: InputAction, Zoom: InputAction, Pan: InputAction, Precise: InputAction =
+	CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan, CameraContext.Precise
 
 return {
 	Setup = function(): ()
-		Rotate.Enabled, Zoom.Enabled, Pan.Enabled = false, false, false
+		Rotate.Enabled, Zoom.Enabled, Pan.Enabled, Precise.Enabled = false, false, false, false
 	end,
 } :: Types.Addon

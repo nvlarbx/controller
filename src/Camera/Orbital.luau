@@ -10,28 +10,41 @@ const Camera = workspace.CurrentCamera :: Camera
 const Player = game:GetService("Players").LocalPlayer :: Player
 const InputContexts = Player:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
-const Rotate, Zoom, ZoomRate, Pan = CameraContext.Rotate, CameraContext.Zoom, CameraContext.ZoomRate, CameraContext.Pan
-const MouseDelta, TouchDelta, Thumbstick1 = Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick1
-const SendLookVector: InputBinding, SendFirstPerson: InputBinding =
-	CameraContext.LookVector.controller, CameraContext.FirstPerson.controller
+const Rotate, Zoom, Pan, Precise = CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan, CameraContext.Precise
+const MouseDelta, TouchDelta, Thumbstick2, RotateKeybinds =
+	Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick2, Rotate.Keybinds
+const MouseWheel = Zoom.MouseWheel
+const ZoomKeybinds, ZoomClicks = Zoom.Keybinds, Zoom.ThumbsticksClicks
+const SendLookVector: InputBinding, SendAutoRotate: InputBinding =
+	CameraContext.LookVector.controller, CameraContext.AutoRotate.controller
 
-const clamp, rad, exp = math.clamp, math.rad, math.exp
+const clamp, rad, exp, abs = math.clamp, math.rad, math.exp, math.abs
 const create, create2, magnitude, ZERO = vector.create, Vector2.new, vector.magnitude, vector.zero :: vector
 const lookAlong, fromEulerAnglesYXZ = CFrame.lookAlong, CFrame.fromEulerAnglesYXZ
 const insert = table.insert
 
-const RENDER_STEP_NAME = "OrbitalCamera"
-const ZOOM_STEP = 0.2
-const ZOOM_RATE = 1 / 3
-const TAU, PITCH_LIMIT = (math.pi * 2) :: number, rad(80) :: number
+const FIRST_PERSON_RADIUS = 1.2 :: number
+const WHEEL_SCALE, WHEEL_PRECISE_SCALE = -0.2 :: number, -0.01 :: number
+const MOUSE_CURVE, MOUSE_CURVE_ANCHOR = 0.4 :: number, 0.01 :: number
+const PI, TAU, PITCH_LIMIT = math.pi :: number, (math.pi * 2) :: number, rad(80) :: number
 const MOUSE_SCALE, GAMEPAD_SCALE, TOUCH_SCALE =
 	create2(0.0025, 0.0025 * 0.77, 0) :: Vector2,
 	(create2(1, 0.77, 0) * rad(240)) :: Vector2,
-	(create2(1, 0.66, 0) * rad(1)) :: Vector2
+	(create2(0.0035, 0.0035 * 0.66, 0)) :: Vector2
 
+local RotateSmooth = 30 :: number
+local ZoomSmooth = 10 :: number
+local ZoomRate = 0.06 :: number
+local ZoomCurvature = 0.5 :: number
+local KeyboardRate = 60 :: number
+local ZoomKeyboardRate = 40 :: number
+local MouseSensitivity = 1 :: number
+local GamepadSensitivity = 1 :: number
+local TouchSensitivity = 1 :: number
 local MinRadius, MaxRadius = Player.CameraMinZoomDistance, Player.CameraMaxZoomDistance
 local Radius = clamp(12.5, MinRadius, MaxRadius) :: number
-local IsFirstPerson = (Radius <= 0.5) :: boolean
+local TargetRadius = Radius
+local IsFirstPerson = (Radius <= FIRST_PERSON_RADIUS) :: boolean
 local Offset = ZERO :: Vector3
 
 const SubjectGetters = {
@@ -41,22 +54,43 @@ const SubjectGetters = {
 	Model = function(Instance: any): Vector3
 		return Instance:GetPivot().Position
 	end,
+	Attachment = function(Instance: any): Vector3
+		return Instance.WorldPosition
+	end,
 } :: { [string]: (any) -> Vector3 }
 
-local Subject: (BasePart | Model)? = nil
+const SubjectFrames = {
+	BasePart = function(Instance: any): CFrame
+		return Instance.CFrame
+	end,
+	Model = function(Instance: any): CFrame
+		return Instance:GetPivot()
+	end,
+	Attachment = function(Instance: any): CFrame
+		return Instance.WorldCFrame
+	end,
+} :: { [string]: (any) -> CFrame }
+
+local Subject: (BasePart | Model | Attachment)? = nil
+local HiddenSubject: Instance? = nil
 local GetSubjectPosition: ((any) -> Vector3)? = nil
+local GetSubjectFrame: ((any) -> CFrame)? = nil
 local WarnedSubject = false
 local Humanoid: Humanoid? = nil
 local OffsetConnection: RBXScriptConnection? = nil
+local HumanoidConnection: RBXScriptConnection? = nil
 local SubjectConnection: RBXScriptConnection? = nil
 local Yaw, Pitch = 0, rad(-15) :: number
+local TargetYaw, TargetPitch = Yaw, Pitch
 local LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector :: vector
 local LastSentLookVector = ZERO :: vector
-local LastSentFirstPerson = false
 local IsGamepad = false
+local IsTouch = false
+local IsPrecise = false
 
 local State = ZERO :: vector
-local ZoomRateState = 0
+local KeyboardState = ZERO :: vector
+local HeldZoom = 0 :: number
 
 const Connections = table.create(8) :: { RBXScriptConnection }
 
@@ -67,37 +101,31 @@ const function TrySendLookVector(): ()
 	end
 end
 
-const function TrySendFirstPerson(Value: boolean): ()
-	if LastSentFirstPerson ~= Value then
-		LastSentFirstPerson = Value
-		SendFirstPerson:Fire(Value)
+const function ApplyVisibility(Target: Instance?, Transparency: number): ()
+	if Target == nil then
+		return
+	end
+
+	if Target:IsA("BasePart") then
+		Target.LocalTransparencyModifier = Transparency
+	end
+
+	for _, Descendant: Instance in Target:GetDescendants() do
+		if Descendant:IsA("Decal") then
+			Descendant.LocalTransparencyModifier = Transparency
+		end
 	end
 end
 
 const function UpdateSubjectVisibility(): ()
-	const Current = Subject
-	if Current == nil then
-		return
+	const Target: Instance? = if Subject and Subject:IsA("Attachment") then Subject.Parent else Subject
+
+	if HiddenSubject ~= Target then
+		ApplyVisibility(HiddenSubject, 0)
+		HiddenSubject = Target
 	end
 
-	const Transparency = if IsFirstPerson then 1 else 0
-	local Root: Instance = Current
-
-	if Current:IsA("BasePart") then
-		const Owner = Current.Parent
-		if Owner and Owner:IsA("Model") then
-			Root = Owner
-		else
-			Current.LocalTransparencyModifier = Transparency
-			return
-		end
-	end
-
-	for _, Descendant in Root:GetDescendants() do
-		if Descendant:IsA("BasePart") or Descendant:IsA("Decal") then
-			Descendant.LocalTransparencyModifier = Transparency
-		end
-	end
+	ApplyVisibility(Target, if IsFirstPerson then 1 else 0)
 end
 
 const function UpdateMouseModifier(): ()
@@ -111,26 +139,66 @@ const function UpdateMouseBehavior(): ()
 		else Enum.MouseBehavior.Default
 end
 
+const function ApplyRadius(NewRadius: number): ()
+	Radius = NewRadius
+	const NowFirstPerson = Radius <= FIRST_PERSON_RADIUS
+	if NowFirstPerson ~= IsFirstPerson then
+		IsFirstPerson = NowFirstPerson
+		SendAutoRotate:Fire(IsFirstPerson)
+		UpdateSubjectVisibility()
+		UpdateMouseModifier()
+		UpdateMouseBehavior()
+	end
+end
+
 const function UpdateRadius(NewRadius: number): ()
-	Radius = clamp(NewRadius, MinRadius, MaxRadius)
-	IsFirstPerson = Radius <= 0.5
-	TrySendFirstPerson(IsFirstPerson)
-	UpdateSubjectVisibility()
-	UpdateMouseModifier()
-	UpdateMouseBehavior()
+	const Clamped = clamp(NewRadius, MinRadius, MaxRadius)
+	if Clamped >= FIRST_PERSON_RADIUS then
+		TargetRadius = Clamped
+		return
+	end
+
+	TargetRadius = if NewRadius > TargetRadius then FIRST_PERSON_RADIUS else MinRadius
+end
+
+const function SnapRadius(NewRadius: number): ()
+	TargetRadius = clamp(NewRadius, MinRadius, MaxRadius)
+	ApplyRadius(TargetRadius)
 end
 
 const function RotateCamera(Delta: Vector3, Scale: number): ()
-	Yaw = (Yaw - (Delta.X * Scale)) % TAU
-	Pitch = clamp(Pitch - (Delta.Y * Scale), -PITCH_LIMIT, PITCH_LIMIT)
+	TargetYaw = (TargetYaw - (Delta.X * Scale)) % TAU
+	TargetPitch = clamp(TargetPitch - (Delta.Y * Scale), -PITCH_LIMIT, PITCH_LIMIT)
+end
+
+const function StepRotation(dt: number): ()
+	const DeltaYaw = (((TargetYaw - Yaw) + PI) % TAU) - PI
+	const DeltaPitch = TargetPitch - Pitch
+
+	if abs(DeltaYaw) < 0.001 and abs(DeltaPitch) < 0.001 then
+		if Yaw ~= TargetYaw or Pitch ~= TargetPitch then
+			Yaw, Pitch = TargetYaw, TargetPitch
+			LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector
+			TrySendLookVector()
+		end
+		return
+	end
+
+	const Alpha = 1 - exp(-RotateSmooth * dt)
+	Yaw = (Yaw + (DeltaYaw * Alpha)) % TAU
+	Pitch = Pitch + (DeltaPitch * Alpha)
 	LookVector = fromEulerAnglesYXZ(Pitch, Yaw, 0).LookVector
 	TrySendLookVector()
 end
 
 const function Teardown(): ()
+	if IsFirstPerson then
+		SendAutoRotate:Fire(false)
+	end
+
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-	RunService:UnbindFromRenderStep(RENDER_STEP_NAME)
-	ZoomRateState = 0
+	RunService:UnbindFromRenderStep("OrbitalCamera")
+	TargetRadius = Radius
 
 	for _, Connection in Connections do
 		Connection:Disconnect()
@@ -144,6 +212,12 @@ const function Teardown(): ()
 		OffsetConnection = nil
 	end
 
+	const Humanoids = HumanoidConnection
+	if Humanoids then
+		Humanoids:Disconnect()
+		HumanoidConnection = nil
+	end
+
 	const Subjects = SubjectConnection
 	if Subjects then
 		Subjects:Disconnect()
@@ -152,6 +226,8 @@ const function Teardown(): ()
 
 	Humanoid = nil
 end
+
+local UpdateSubject: () -> ()
 
 const function UpdateOffset(): ()
 	const Current = Humanoid
@@ -165,15 +241,20 @@ const function BindOffset(): ()
 		OffsetConnection = nil
 	end
 
+	const Humanoids = HumanoidConnection
+	if Humanoids then
+		Humanoids:Disconnect()
+		HumanoidConnection = nil
+	end
+
 	const Current = Humanoid
 	if Current then
 		OffsetConnection = Current:GetPropertyChangedSignal("CameraOffset"):Connect(UpdateOffset)
+		HumanoidConnection = Current.AncestryChanged:Connect(UpdateSubject)
 	end
 
 	UpdateOffset()
 end
-
-local UpdateSubject: () -> ()
 
 const function BindSubject(Watched: Instance?): ()
 	const Existing = SubjectConnection
@@ -193,22 +274,32 @@ function UpdateSubject(): ()
 
 	if Resolved and Resolved:IsA("Humanoid") then
 		Humanoid = Resolved
-		TempSubject = Resolved.Parent
+
+		const Character = Resolved.Parent
+		const Head = if Character then Character:FindFirstChild("Head") else nil
+		const Face = if Head then Head:FindFirstChild("FaceFrontAttachment") else nil
+
+		TempSubject = if Face and Face:IsA("Attachment") then Face else Head or Character
+	elseif Resolved then
+		const Owner = Resolved.Parent
+		Humanoid = if Owner then Owner:FindFirstChildOfClass("Humanoid") else nil
 	else
 		Humanoid = nil
 	end
 
-	BindOffset()
-
 	if TempSubject then
-		const Getter = if TempSubject:IsA("BasePart")
-			then SubjectGetters.BasePart
-			elseif TempSubject:IsA("Model") then SubjectGetters.Model
+		const Key = if TempSubject:IsA("Attachment")
+			then "Attachment"
+			elseif TempSubject:IsA("BasePart") then "BasePart"
+			elseif TempSubject:IsA("Model") then "Model"
 			else nil
+		const Getter = if Key then SubjectGetters[Key] else nil
 
-		if Getter and TempSubject.Parent then
-			Subject, GetSubjectPosition, WarnedSubject = TempSubject :: any, Getter, false
+		if Getter and Key and TempSubject.Parent then
+			Subject, GetSubjectPosition, GetSubjectFrame, WarnedSubject =
+				TempSubject :: any, Getter, SubjectFrames[Key], false
 			BindSubject(TempSubject)
+			BindOffset()
 			UpdateSubjectVisibility()
 			return
 		elseif Getter == nil and WarnedSubject == false then
@@ -220,56 +311,155 @@ function UpdateSubject(): ()
 		warn("Missing subject")
 	end
 
-	Subject, GetSubjectPosition = nil, nil
+	Subject, GetSubjectPosition, GetSubjectFrame = nil, nil, nil
 	BindSubject(TempSubject or Resolved)
+	BindOffset()
+	UpdateSubjectVisibility()
 end
 
 const function UpdateSensitivities(): ()
 	const Invert = UserGameSettings:GetCameraYInvertValue() :: number
 	MouseDelta.Vector2Scale = create2(MOUSE_SCALE.X, MOUSE_SCALE.Y * Invert)
-	MouseDelta.Scale = UserGameSettings.MouseSensitivity
-	Thumbstick1.Vector2Scale = create2(GAMEPAD_SCALE.X, GAMEPAD_SCALE.Y * Invert)
-	Thumbstick1.Scale = UserGameSettings.GamepadCameraSensitivity
-	TouchDelta.Vector2Scale = create2(TOUCH_SCALE.X, TOUCH_SCALE.Y * Invert)
+	MouseDelta.Scale = MOUSE_CURVE_ANCHOR * (UserGameSettings.MouseSensitivity ^ MOUSE_CURVE) * MouseSensitivity
+	Thumbstick2.Vector2Scale = create2(GAMEPAD_SCALE.X, GAMEPAD_SCALE.Y * Invert)
+	Thumbstick2.Scale = UserGameSettings.GamepadCameraSensitivity * GamepadSensitivity
+	MouseWheel.Scale = (if IsPrecise then WHEEL_PRECISE_SCALE else WHEEL_SCALE) * MouseSensitivity
+	TouchDelta.Vector2Scale = create2(TOUCH_SCALE.X * TouchSensitivity, TOUCH_SCALE.Y * TouchSensitivity * Invert)
+end
+
+const function ReadNumber(Key: string, Default: number): number
+	const Value = Player:GetAttribute(Key)
+	return if type(Value) == "number" then Value else Default
+end
+
+const function ReadSettings(): ()
+	RotateSmooth = ReadNumber("RotateSmooth", 30)
+	ZoomSmooth = ReadNumber("ZoomSmooth", 10)
+	ZoomRate = ReadNumber("ZoomRate", 0.06)
+	ZoomCurvature = ReadNumber("ZoomCurvature", 0.5)
+	KeyboardRate = ReadNumber("KeyboardRate", 60)
+	ZoomKeyboardRate = ReadNumber("ZoomKeyboardRate", 40)
+	MouseSensitivity = ReadNumber("MouseSensitivity", 1)
+	GamepadSensitivity = ReadNumber("GamepadSensitivity", 1)
+	TouchSensitivity = ReadNumber("TouchSensitivity", 1)
+end
+
+const RATE_KEYS = {
+	"RotateSmooth",
+	"ZoomSmooth",
+	"ZoomRate",
+	"ZoomCurvature",
+	"KeyboardRate",
+	"ZoomKeyboardRate",
+} :: { string }
+
+const SENSITIVITY_KEYS = {
+	"MouseSensitivity",
+	"GamepadSensitivity",
+	"TouchSensitivity",
+} :: { string }
+
+const function OnSensitivityChanged(): ()
+	ReadSettings()
+	UpdateSensitivities()
+end
+
+const function OnRadiusChanged(): ()
+	const Value = Player:GetAttribute("Radius")
+	if type(Value) == "number" then
+		SnapRadius(Value)
+	end
+end
+
+const function OnPreciseStateChanged(InputState: boolean): ()
+	IsPrecise = InputState
+	UpdateSensitivities()
 end
 
 const function UpdateInputType(): ()
 	const PreferredInput = UserInputService.PreferredInput :: Enum.PreferredInput
 	IsGamepad = PreferredInput == Enum.PreferredInput.Gamepad or PreferredInput == Enum.PreferredInput.MicroGamepad
+	IsTouch = PreferredInput == Enum.PreferredInput.Touch
 	if IsGamepad == false then
 		State = ZERO
+	end
+	if IsGamepad or IsTouch then
+		KeyboardState = ZERO
+		HeldZoom = 0
 	end
 end
 
 const function OnRotateStateChanged(InputState: Vector2): ()
 	State = create(InputState.X, InputState.Y, 0) :: vector
-	if IsGamepad == false and magnitude(State) > 0 then
+	if IsGamepad then
+		return
+	end
+
+	if Rotate.PreferredBinding == RotateKeybinds then
+		KeyboardState = State
+		return
+	end
+
+	KeyboardState = ZERO
+
+	if magnitude(State) > 0 then
 		RotateCamera(State, 1)
 	end
 end
 
+const function StepZoom(InputState: number): ()
+	if IsTouch then
+		UpdateRadius(TargetRadius + InputState)
+		return
+	end
+
+	const Step = InputState * ZoomRate
+	UpdateRadius(
+		if Step > 0
+			then TargetRadius + Step * (1 + TargetRadius * ZoomCurvature)
+			else (TargetRadius + Step) / (1 - Step * ZoomCurvature)
+	)
+end
+
 const function OnZoomStateChanged(InputState: number): ()
+	const Preferred = Zoom.PreferredBinding
+	if Preferred == ZoomKeybinds or Preferred == ZoomClicks then
+		HeldZoom = InputState
+		return
+	end
+
+	HeldZoom = 0
+
 	if InputState ~= 0 then
-		UpdateRadius(Radius * exp(InputState * ZOOM_STEP))
+		StepZoom(InputState)
 	end
 end
 
-const function OnZoomRateStateChanged(InputState: number): ()
-	ZoomRateState = InputState
-end
-
 const function UpdateZoomLimits(): ()
-	MinRadius, MaxRadius = Player.CameraMinZoomDistance, Player.CameraMaxZoomDistance
-	UpdateRadius(Radius)
+	MinRadius = Player.CameraMinZoomDistance
+	MaxRadius = Player.CameraMaxZoomDistance
+	SnapRadius(Radius)
 end
 
 const function Update(dt: number): ()
 	if IsGamepad and magnitude(State) > 0.001 then
-		RotateCamera(State, dt)
+		RotateCamera(State, dt * GamepadSensitivity)
 	end
 
-	if ZoomRateState ~= 0 then
-		UpdateRadius(Radius * exp(ZoomRateState * ZOOM_RATE * dt))
+	if magnitude(KeyboardState) > 0.001 then
+		RotateCamera(KeyboardState, KeyboardRate * dt)
+	end
+
+	if HeldZoom ~= 0 then
+		StepZoom(HeldZoom * ZoomKeyboardRate * dt)
+	end
+
+	StepRotation(dt)
+
+	if Radius ~= TargetRadius then
+		const Alpha = 1 - exp(-ZoomSmooth * dt)
+		const Next = Radius + ((TargetRadius - Radius) * Alpha)
+		ApplyRadius(if abs(TargetRadius - Next) <= 0.001 then TargetRadius else Next)
 	end
 
 	if Subject == nil then
@@ -280,9 +470,13 @@ const function Update(dt: number): ()
 
 	local Focus = lookAlong(SubjectPosition, LookVector)
 	if Offset ~= ZERO then
-		Focus += Focus:VectorToWorldSpace(Offset)
-	end
+		const Frame = if Humanoid and Humanoid.RootPart
+			then Humanoid.RootPart.CFrame
+			elseif GetSubjectFrame then (GetSubjectFrame :: (any) -> CFrame)(Subject)
+			else nil
 
+		Focus += if Frame then Frame:VectorToWorldSpace(Offset) else Offset
+	end
 	Camera.CFrame = if IsFirstPerson then Focus else Focus - (LookVector * Radius)
 	Camera.Focus = Focus
 end
@@ -292,11 +486,11 @@ const Orbital = {} :: Types.Addon
 function Orbital.Setup(): ()
 	Camera.CameraType = Enum.CameraType.Scriptable
 
-	Rotate.Enabled, Zoom.Enabled, ZoomRate.Enabled, Pan.Enabled = true, true, true, true
+	Rotate.Enabled, Zoom.Enabled, Pan.Enabled, Precise.Enabled = true, true, true, true
 
 	insert(Connections, Rotate.StateChanged:Connect(OnRotateStateChanged))
 	insert(Connections, Zoom.StateChanged:Connect(OnZoomStateChanged))
-	insert(Connections, ZoomRate.StateChanged:Connect(OnZoomRateStateChanged))
+	insert(Connections, Precise.StateChanged:Connect(OnPreciseStateChanged))
 	insert(Connections, UserInputService:GetPropertyChangedSignal("PreferredInput"):ConnectParallel(UpdateInputType))
 	insert(Connections, UserGameSettings.Changed:Connect(UpdateSensitivities))
 	insert(Connections, UserGameSettings.FullscreenChanged:Connect(UpdateMouseBehavior))
@@ -304,7 +498,20 @@ function Orbital.Setup(): ()
 	insert(Connections, Camera:GetPropertyChangedSignal("CameraSubject"):Connect(UpdateSubject))
 	insert(Connections, Player:GetPropertyChangedSignal("CameraMinZoomDistance"):Connect(UpdateZoomLimits))
 	insert(Connections, Player:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(UpdateZoomLimits))
-	RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value, Update)
+	insert(Connections, Player:GetAttributeChangedSignal("Radius"):Connect(OnRadiusChanged))
+
+	for _, Key in RATE_KEYS do
+		insert(Connections, Player:GetAttributeChangedSignal(Key):Connect(ReadSettings))
+	end
+
+	for _, Key in SENSITIVITY_KEYS do
+		insert(Connections, Player:GetAttributeChangedSignal(Key):Connect(OnSensitivityChanged))
+	end
+
+	RunService:BindToRenderStep("OrbitalCamera", Enum.RenderPriority.Camera.Value, Update)
+
+	IsPrecise = Precise:GetState() :: boolean
+	ReadSettings()
 
 	UpdateSubject()
 	UpdateZoomLimits()
@@ -312,7 +519,7 @@ function Orbital.Setup(): ()
 	UpdateSensitivities()
 	UpdateMouseModifier()
 	UpdateMouseBehavior()
-	TrySendFirstPerson(IsFirstPerson)
+	SendAutoRotate:Fire(IsFirstPerson)
 	TrySendLookVector()
 end
 
