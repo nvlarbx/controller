@@ -12,14 +12,14 @@ return function(Server: boolean): ((Player) -> ())?
 		MovementContext.Name, CameraContext.Name, MovementContext.Parent, CameraContext.Parent =
 			"MovementContext", "CameraContext", InputContextsTemplate, InputContextsTemplate
 
-		const Walk, LookVector, FirstPerson =
+		const Walk, LookVector, AutoRotate =
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction
-		Walk.Name, LookVector.Name, FirstPerson.Name, Walk.Parent, LookVector.Parent, FirstPerson.Parent, Walk.Type, LookVector.Type =
+		Walk.Name, LookVector.Name, AutoRotate.Name, Walk.Parent, LookVector.Parent, AutoRotate.Parent, Walk.Type, LookVector.Type =
 			"Walk",
 			"LookVector",
-			"FirstPerson",
+			"AutoRotate",
 			MovementContext,
 			CameraContext,
 			CameraContext,
@@ -38,40 +38,65 @@ return function(Server: boolean): ((Player) -> ())?
 			KeyCode.A,
 			KeyCode.S,
 			KeyCode.D
-		Scriptable:Clone().Parent = FirstPerson
 
-		const Rotate, Pan, Zoom, ZoomRate =
-			newInstance("InputAction") :: InputAction,
+		const LeftShift, ButtonY, AutoRotateGui =
+			newInstance("InputBinding") :: InputBinding,
+			newInstance("InputBinding") :: InputBinding,
+			newInstance("InputBinding") :: InputBinding
+		LeftShift.Name, ButtonY.Name, AutoRotateGui.Name, LeftShift.Parent, ButtonY.Parent, AutoRotateGui.Parent, LeftShift.KeyCode, ButtonY.KeyCode =
+			"LeftShift",
+			"ButtonY",
+			"GuiButton",
+			AutoRotate,
+			AutoRotate,
+			AutoRotate,
+			KeyCode.LeftShift,
+			KeyCode.ButtonY
+
+		Scriptable:Clone().Parent = AutoRotate
+
+		const WalkThumbstick = newInstance("InputBinding") :: InputBinding
+		WalkThumbstick.Name, WalkThumbstick.Parent, WalkThumbstick.KeyCode = "Thumbstick1", Walk, KeyCode.Thumbstick1
+
+		Scriptable:Clone().Parent = Walk
+
+		const Jump = newInstance("InputAction") :: InputAction
+		Jump.Name, Jump.Type, Jump.Parent = "Jump", InputActionType.Bool, MovementContext
+
+		const Space, ButtonA, JumpGui =
+			newInstance("InputBinding") :: InputBinding,
+			newInstance("InputBinding") :: InputBinding,
+			newInstance("InputBinding") :: InputBinding
+		Space.Name, ButtonA.Name, JumpGui.Name, Space.Parent, ButtonA.Parent, JumpGui.Parent, Space.KeyCode, ButtonA.KeyCode =
+			"Space", "ButtonA", "GuiButton", Jump, Jump, Jump, KeyCode.Space, KeyCode.ButtonA
+
+		const Rotate, Pan, Zoom =
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction,
 			newInstance("InputAction") :: InputAction
-		Rotate.Name, Pan.Name, Zoom.Name, ZoomRate.Name, Rotate.Type, Pan.Type, Zoom.Type, ZoomRate.Type, Rotate.Enabled, Pan.Enabled, Zoom.Enabled, ZoomRate.Enabled, Rotate.Parent, Pan.Parent, Zoom.Parent, ZoomRate.Parent =
+		Rotate.Name, Pan.Name, Zoom.Name, Rotate.Type, Pan.Type, Zoom.Type, Rotate.Enabled, Pan.Enabled, Zoom.Enabled, Rotate.Parent, Pan.Parent, Zoom.Parent =
 			"Rotate",
 			"Pan",
 			"Zoom",
-			"ZoomRate",
 			InputActionType.Direction2D,
 			InputActionType.Bool,
 			InputActionType.Direction1D,
-			InputActionType.Direction1D,
 			false,
 			false,
 			false,
-			false,
-			CameraContext,
 			CameraContext,
 			CameraContext,
 			CameraContext
 
-		const MouseDelta, TouchDelta, Thumbstick1, RotateKeybinds =
+		const MouseDelta, TouchDelta, RotateThumbstick, RotateKeybinds =
 			newInstance("InputBinding") :: InputBinding,
 			newInstance("InputBinding") :: InputBinding,
 			newInstance("InputBinding") :: InputBinding,
 			newInstance("InputBinding") :: InputBinding
-		MouseDelta.Name, TouchDelta.Name, Thumbstick1.Name, RotateKeybinds.Name, MouseDelta.Parent, TouchDelta.Parent, Thumbstick1.Parent, RotateKeybinds.Parent, MouseDelta.KeyCode, TouchDelta.KeyCode, Thumbstick1.KeyCode, RotateKeybinds.Scale, RotateKeybinds.Left, RotateKeybinds.Right =
+		MouseDelta.Name, TouchDelta.Name, RotateThumbstick.Name, RotateKeybinds.Name, MouseDelta.Parent, TouchDelta.Parent, RotateThumbstick.Parent, RotateKeybinds.Parent, MouseDelta.KeyCode, TouchDelta.KeyCode, RotateThumbstick.KeyCode, RotateKeybinds.Scale, RotateKeybinds.Left, RotateKeybinds.Right =
 			"MouseDelta",
 			"TouchDelta",
-			"Thumbstick1",
+			"Thumbstick2",
 			"Keybinds",
 			Rotate,
 			Rotate,
@@ -79,8 +104,8 @@ return function(Server: boolean): ((Player) -> ())?
 			Rotate,
 			KeyCode.MouseDelta,
 			KeyCode.TouchDelta,
-			KeyCode.Thumbstick1,
-			2,
+			KeyCode.Thumbstick2,
+			0.05,
 			KeyCode.Left,
 			KeyCode.Right
 
@@ -112,27 +137,38 @@ return function(Server: boolean): ((Player) -> ())?
 		ZoomKeybinds.Name, ThumbsticksClicks.Name, ZoomKeybinds.Parent, ThumbsticksClicks.Parent, ZoomKeybinds.Scale, ThumbsticksClicks.Scale, ZoomKeybinds.Up, ZoomKeybinds.Down, ThumbsticksClicks.Up, ThumbsticksClicks.Down =
 			"Keybinds",
 			"ThumbsticksClicks",
-			ZoomRate,
-			ZoomRate,
-			6,
-			6,
+			Zoom,
+			Zoom,
+			-1,
+			-1,
 			KeyCode.O,
 			KeyCode.I,
 			KeyCode.ButtonR3,
 			KeyCode.ButtonL3
 
+		const Precise = newInstance("InputAction") :: InputAction
+		Precise.Name, Precise.Type, Precise.Enabled, Precise.Parent =
+			"Precise", InputActionType.Bool, false, CameraContext
+
+		const LeftControl, ButtonL1 =
+			newInstance("InputBinding") :: InputBinding, newInstance("InputBinding") :: InputBinding
+		LeftControl.Name, ButtonL1.Name, LeftControl.Parent, ButtonL1.Parent, LeftControl.KeyCode, ButtonL1.KeyCode =
+			"LeftControl", "ButtonL1", Precise, Precise, KeyCode.LeftControl, KeyCode.ButtonL1
+
 		return function(Player: Player): ()
 			InputContextsTemplate:Clone().Parent = Player
 		end
 	else
-		const Types = require(script.Parent.Types)
+		const InputContexts = game:GetService("Players").LocalPlayer:WaitForChild("InputContexts")
+		const CameraContext = InputContexts:WaitForChild("CameraContext") :: any
 
-		const CameraContext = (
-			game:GetService("Players").LocalPlayer:WaitForChild("InputContexts") :: Types.InputContexts
-		).CameraContext
+		const Rotate, Pan, Zoom, Precise =
+			CameraContext:WaitForChild("Rotate") :: InputAction,
+			CameraContext:WaitForChild("Pan") :: InputAction,
+			CameraContext:WaitForChild("Zoom") :: InputAction,
+			CameraContext:WaitForChild("Precise") :: InputAction
 
-		CameraContext.Rotate.Enabled, CameraContext.Pan.Enabled, CameraContext.Zoom.Enabled, CameraContext.ZoomRate.Enabled =
-			true, true, true, true
+		Rotate.Enabled, Pan.Enabled, Zoom.Enabled, Precise.Enabled = true, true, true, true
 	end
 
 	return

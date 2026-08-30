@@ -14,26 +14,6 @@ export type Character = Model & {
 	Humanoid: Humanoid & {
 		Animator: Animator,
 	},
-	Limbs: Model,
-	Animate: ModuleScript,
-}
-
-export type CharacterHandle = {
-	Character: Model,
-	RootPart: BasePart,
-	Humanoid: Humanoid,
-	ControllerManager: ControllerManager,
-	GroundController: GroundController,
-	AirController: AirController,
-	SwimController: SwimController,
-	ClimbController: ClimbController,
-	GroundSensor: ControllerPartSensor,
-	ClimbSensor: ControllerPartSensor,
-	Animator: Animator,
-}
-
-type Scriptable = InputAction & {
-	controller: InputBinding,
 }
 
 export type InputContexts = Folder & {
@@ -41,16 +21,40 @@ export type InputContexts = Folder & {
 		Rotate: InputAction & {
 			MouseDelta: InputBinding,
 			TouchDelta: InputBinding,
-			Thumbstick1: InputBinding,
+			Thumbstick2: InputBinding,
+			Keybinds: InputBinding,
 		},
-		Zoom: InputAction,
-		ZoomRate: InputAction,
+		Zoom: InputAction & {
+			MouseWheel: InputBinding,
+			Keybinds: InputBinding,
+			ThumbsticksClicks: InputBinding,
+		},
+		Precise: InputAction & {
+			LeftControl: InputBinding,
+			ButtonL1: InputBinding,
+		},
 		Pan: InputAction,
-		LookVector: Scriptable,
-		FirstPerson: Scriptable,
+		LookVector: InputAction & {
+			controller: InputBinding,
+		},
+		AutoRotate: InputAction & {
+			LeftShift: InputBinding,
+			ButtonY: InputBinding,
+			GuiButton: InputBinding,
+			controller: InputBinding,
+		},
 	},
 	MovementContext: InputContext & {
-		Walk: InputAction,
+		Walk: InputAction & {
+			Keybinds: InputBinding,
+			Thumbstick1: InputBinding,
+			controller: InputBinding,
+		},
+		Jump: InputAction & {
+			Space: InputBinding,
+			ButtonA: InputBinding,
+			GuiButton: InputBinding,
+		},
 	},
 }
 

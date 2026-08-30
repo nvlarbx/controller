@@ -2,27 +2,47 @@
 
 return function(Server: boolean): ((Player) -> ())?
 	if Server then
-		const Types = require(script.Parent.Types)
 		const newInstance = Instance.new
 
-		const function Augment(Character: Model): Types.CharacterHandle?
-			Character:FindFirstChild("Animate"):Destroy()
+		const BASE_TURN_SPEED = 16
+
+		const Prototype = newInstance("ControllerManager")
+		Prototype.BaseTurnSpeed = BASE_TURN_SPEED
+
+		const ProtoGround = newInstance("GroundController")
+		ProtoGround.Parent = Prototype
+		Prototype.ActiveController = ProtoGround
+		const ProtoAir = newInstance("AirController")
+		ProtoAir.MoveMaxForce = 8181.376
+		ProtoAir.Parent = Prototype
+		const ProtoSwim = newInstance("SwimController")
+		ProtoSwim.Parent = Prototype
+		const ProtoClimb = newInstance("ClimbController")
+		ProtoClimb.Parent = Prototype
+
+		const ProtoGroundSensor = newInstance("ControllerPartSensor") :: ControllerPartSensor
+		ProtoGroundSensor.Name = "GroundSensor"
+		ProtoGroundSensor.SensorMode = Enum.SensorMode.Floor
+		ProtoGroundSensor.Parent = Prototype
+		const ProtoClimbSensor = newInstance("ControllerPartSensor") :: ControllerPartSensor
+		ProtoClimbSensor.Name = "ClimbSensor"
+		ProtoClimbSensor.SensorMode = Enum.SensorMode.Ladder
+		ProtoClimbSensor.Parent = Prototype
+
+		const function Augment(Character: Model): ()
 			const RootPart = Character.PrimaryPart :: Part
 			const Humanoid = Character:FindFirstChildOfClass("Humanoid") :: Humanoid
 
 			local HipHeight = Humanoid.HipHeight :: number
 
-			const GroundController = newInstance("GroundController")
-			GroundController.GroundOffset = HipHeight
+			const ControllerManager = Prototype:Clone()
+			const GroundController = ControllerManager:FindFirstChildOfClass("GroundController") :: GroundController
+			const GroundSensor = ControllerManager.GroundSensor :: ControllerPartSensor
+			const ClimbSensor = ControllerManager.ClimbSensor :: ControllerPartSensor
 
-			const GroundSensor = newInstance("ControllerPartSensor") :: ControllerPartSensor
-			GroundSensor.Name = "GroundSensor"
-			GroundSensor.SensorMode = Enum.SensorMode.Floor
+			GroundController.GroundOffset = HipHeight
 			GroundSensor.SearchDistance = HipHeight + 1.5
 			GroundSensor.Parent = RootPart
-			const ClimbSensor = newInstance("ControllerPartSensor") :: ControllerPartSensor
-			ClimbSensor.Name = "ClimbSensor"
-			ClimbSensor.SensorMode = Enum.SensorMode.Ladder
 			ClimbSensor.SearchDistance = 1.5 * Character:GetScale()
 			ClimbSensor.Parent = RootPart
 
@@ -39,37 +59,10 @@ return function(Server: boolean): ((Player) -> ())?
 				ClimbSensor.SearchDistance = 1.5 * Character:GetScale()
 			end)
 
-			const ControllerManager = newInstance("ControllerManager")
 			ControllerManager.RootPart = RootPart
 			ControllerManager.Parent = Character
 
-			GroundController.Parent = ControllerManager
-			ControllerManager.ActiveController = GroundController
-			ControllerManager.GroundSensor = GroundSensor
-			ControllerManager.ClimbSensor = ClimbSensor
-
-			const AirController = newInstance("AirController")
-			AirController.Parent = ControllerManager
-			const SwimController = newInstance("SwimController")
-			SwimController.Parent = ControllerManager
-			const ClimbController = newInstance("ClimbController")
-			ClimbController.Parent = ControllerManager
-
 			Humanoid.EvaluateStateMachine = false
-
-			return {
-				Character = Character,
-				RootPart = RootPart,
-				Humanoid = Humanoid,
-				ControllerManager = ControllerManager,
-				GroundController = GroundController,
-				AirController = AirController,
-				SwimController = SwimController,
-				ClimbController = ClimbController,
-				GroundSensor = GroundSensor,
-				ClimbSensor = ClimbSensor,
-				Animator = Humanoid:WaitForChild("Animator") :: Animator,
-			}
 		end
 
 		return function(Player: Player): ()
@@ -81,12 +74,6 @@ return function(Server: boolean): ((Player) -> ())?
 			Player.CharacterAdded:Connect(Augment)
 		end
 	else
-		const RunService = game:GetService("RunService") :: RunService
-
-		game:GetService("Players").LocalPlayer.CharacterAdded:ConnectParallel(function(Character: Model): ()
-			RunService:SetPredictionMode(Character, Enum.PredictionMode.On)
-		end)
-
 		return
 	end
 end

@@ -11,10 +11,8 @@ const Player = game:GetService("Players").LocalPlayer :: Player
 const InputContexts = Player:WaitForChild("InputContexts") :: Types.InputContexts
 const CameraContext = InputContexts.CameraContext
 const Rotate, Zoom, Pan, Precise = CameraContext.Rotate, CameraContext.Zoom, CameraContext.Pan, CameraContext.Precise
-const MouseDelta, TouchDelta, Thumbstick2, RotateKeybinds =
-	Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick2, Rotate.Keybinds
+const MouseDelta, TouchDelta, Thumbstick2 = Rotate.MouseDelta, Rotate.TouchDelta, Rotate.Thumbstick2
 const MouseWheel = Zoom.MouseWheel
-const ZoomKeybinds, ZoomClicks = Zoom.Keybinds, Zoom.ThumbsticksClicks
 const SendLookVector: InputBinding, SendAutoRotate: InputBinding =
 	CameraContext.LookVector.controller, CameraContext.AutoRotate.controller
 
@@ -25,6 +23,7 @@ const insert = table.insert
 
 const FIRST_PERSON_RADIUS = 1.2 :: number
 const WHEEL_SCALE, WHEEL_PRECISE_SCALE = -0.2 :: number, -0.01 :: number
+const PRECISE_FACTOR = 0.05 :: number
 const MOUSE_CURVE, MOUSE_CURVE_ANCHOR = 0.4 :: number, 0.01 :: number
 const PI, TAU, PITCH_LIMIT = math.pi :: number, (math.pi * 2) :: number, rad(80) :: number
 const MOUSE_SCALE, GAMEPAD_SCALE, TOUCH_SCALE =
@@ -41,6 +40,7 @@ local ZoomKeyboardRate = 40 :: number
 local MouseSensitivity = 1 :: number
 local GamepadSensitivity = 1 :: number
 local TouchSensitivity = 1 :: number
+local TouchRotateScale = 0.2 :: number
 local MinRadius, MaxRadius = Player.CameraMinZoomDistance, Player.CameraMaxZoomDistance
 local Radius = clamp(12.5, MinRadius, MaxRadius) :: number
 local TargetRadius = Radius
@@ -87,6 +87,7 @@ local LastSentLookVector = ZERO :: vector
 local IsGamepad = false
 local IsTouch = false
 local IsPrecise = false
+local PreciseRate = 1 :: number
 
 local State = ZERO :: vector
 local KeyboardState = ZERO :: vector
@@ -320,15 +321,21 @@ end
 const function UpdateSensitivities(): ()
 	const Invert = UserGameSettings:GetCameraYInvertValue() :: number
 	MouseDelta.Vector2Scale = create2(MOUSE_SCALE.X, MOUSE_SCALE.Y * Invert)
-	MouseDelta.Scale = MOUSE_CURVE_ANCHOR * (UserGameSettings.MouseSensitivity ^ MOUSE_CURVE) * MouseSensitivity
+	const Fine = if IsPrecise then PRECISE_FACTOR else 1
+	MouseDelta.Scale = MOUSE_CURVE_ANCHOR
+		* (UserGameSettings.MouseSensitivity ^ MOUSE_CURVE)
+		* MouseSensitivity
+		* Fine
 	Thumbstick2.Vector2Scale = create2(GAMEPAD_SCALE.X, GAMEPAD_SCALE.Y * Invert)
-	Thumbstick2.Scale = UserGameSettings.GamepadCameraSensitivity * GamepadSensitivity
+	Thumbstick2.Scale = UserGameSettings.GamepadCameraSensitivity * GamepadSensitivity * Fine
 	MouseWheel.Scale = (if IsPrecise then WHEEL_PRECISE_SCALE else WHEEL_SCALE) * MouseSensitivity
-	TouchDelta.Vector2Scale = create2(TOUCH_SCALE.X * TouchSensitivity, TOUCH_SCALE.Y * TouchSensitivity * Invert)
+	TouchDelta.Vector2Scale = create2(TOUCH_SCALE.X, TOUCH_SCALE.Y * Invert)
+	TouchDelta.Scale = TouchRotateScale * TouchSensitivity
+	PreciseRate = Fine
 end
 
 const function ReadNumber(Key: string, Default: number): number
-	const Value = Player:GetAttribute(Key)
+	const Value = Camera:GetAttribute(Key)
 	return if type(Value) == "number" then Value else Default
 end
 
@@ -342,6 +349,7 @@ const function ReadSettings(): ()
 	MouseSensitivity = ReadNumber("MouseSensitivity", 1)
 	GamepadSensitivity = ReadNumber("GamepadSensitivity", 1)
 	TouchSensitivity = ReadNumber("TouchSensitivity", 1)
+	TouchRotateScale = ReadNumber("TouchRotateScale", 0.2)
 end
 
 const RATE_KEYS = {
@@ -357,6 +365,7 @@ const SENSITIVITY_KEYS = {
 	"MouseSensitivity",
 	"GamepadSensitivity",
 	"TouchSensitivity",
+	"TouchRotateScale",
 } :: { string }
 
 const function OnSensitivityChanged(): ()
@@ -365,7 +374,7 @@ const function OnSensitivityChanged(): ()
 end
 
 const function OnRadiusChanged(): ()
-	const Value = Player:GetAttribute("Radius")
+	const Value = Camera:GetAttribute("Radius")
 	if type(Value) == "number" then
 		SnapRadius(Value)
 	end
@@ -395,16 +404,17 @@ const function OnRotateStateChanged(InputState: Vector2): ()
 		return
 	end
 
-	if Rotate.PreferredBinding == RotateKeybinds then
-		KeyboardState = State
+	const Preferred = Rotate.PreferredBinding
+	if Preferred == MouseDelta or Preferred == TouchDelta then
+		KeyboardState = ZERO
+
+		if magnitude(State) > 0 then
+			RotateCamera(State, 1)
+		end
 		return
 	end
 
-	KeyboardState = ZERO
-
-	if magnitude(State) > 0 then
-		RotateCamera(State, 1)
-	end
+	KeyboardState = State
 end
 
 const function StepZoom(InputState: number): ()
@@ -422,17 +432,16 @@ const function StepZoom(InputState: number): ()
 end
 
 const function OnZoomStateChanged(InputState: number): ()
-	const Preferred = Zoom.PreferredBinding
-	if Preferred == ZoomKeybinds or Preferred == ZoomClicks then
-		HeldZoom = InputState
+	if Zoom.PreferredBinding == MouseWheel then
+		HeldZoom = 0
+
+		if InputState ~= 0 then
+			StepZoom(InputState)
+		end
 		return
 	end
 
-	HeldZoom = 0
-
-	if InputState ~= 0 then
-		StepZoom(InputState)
-	end
+	HeldZoom = if InputState > 0 then 1 elseif InputState < 0 then -1 else 0
 end
 
 const function UpdateZoomLimits(): ()
@@ -443,15 +452,15 @@ end
 
 const function Update(dt: number): ()
 	if IsGamepad and magnitude(State) > 0.001 then
-		RotateCamera(State, dt * GamepadSensitivity)
+		RotateCamera(State, dt)
 	end
 
 	if magnitude(KeyboardState) > 0.001 then
-		RotateCamera(KeyboardState, KeyboardRate * dt)
+		RotateCamera(KeyboardState, KeyboardRate * PreciseRate * dt)
 	end
 
 	if HeldZoom ~= 0 then
-		StepZoom(HeldZoom * ZoomKeyboardRate * dt)
+		StepZoom(HeldZoom * ZoomKeyboardRate * PreciseRate * dt)
 	end
 
 	StepRotation(dt)
@@ -498,14 +507,14 @@ function Orbital.Setup(): ()
 	insert(Connections, Camera:GetPropertyChangedSignal("CameraSubject"):Connect(UpdateSubject))
 	insert(Connections, Player:GetPropertyChangedSignal("CameraMinZoomDistance"):Connect(UpdateZoomLimits))
 	insert(Connections, Player:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(UpdateZoomLimits))
-	insert(Connections, Player:GetAttributeChangedSignal("Radius"):Connect(OnRadiusChanged))
+	insert(Connections, Camera:GetAttributeChangedSignal("Radius"):Connect(OnRadiusChanged))
 
 	for _, Key in RATE_KEYS do
-		insert(Connections, Player:GetAttributeChangedSignal(Key):Connect(ReadSettings))
+		insert(Connections, Camera:GetAttributeChangedSignal(Key):Connect(ReadSettings))
 	end
 
 	for _, Key in SENSITIVITY_KEYS do
-		insert(Connections, Player:GetAttributeChangedSignal(Key):Connect(OnSensitivityChanged))
+		insert(Connections, Camera:GetAttributeChangedSignal(Key):Connect(OnSensitivityChanged))
 	end
 
 	RunService:BindToRenderStep("OrbitalCamera", Enum.RenderPriority.Camera.Value, Update)
